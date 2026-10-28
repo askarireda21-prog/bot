@@ -25,6 +25,11 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY || 'test');
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const client = new Client({
+  puppeteer: {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/render/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome'
+  },
   authStrategy: new LocalAuth(),
   puppeteer: { 
     headless: true,
