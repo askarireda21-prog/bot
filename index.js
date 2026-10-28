@@ -1,64 +1,54 @@
-import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import express from 'express';
-import QRCode from 'qrcode';
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode');
+const express = require('express');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
-let lastQr = '';
-const PORT = process.env.PORT || 3000;
+let lastQR = null;
 
-app.get('/', async (req,res)=>{
-  try {
-    if(!lastQr) return res.send('<h1>البوت كيوجد... عاود ريفريش بعد 30 ثانية</h1><p>Logs فـ Render</p>');
-    const img = await QRCode.toDataURL(lastQr);
-    res.send(`<h2>سكاني هاد QR بالنمرة الثانية</h2><img src="${img}" width="300"/><br/>واتساب > الاجهزة المرتبطة > ربط جهاز`);
-  } catch(e){ res.send('تسناه شوية...'+e.message); }
-});
-app.listen(PORT, ()=> console.log('Web OK on '+PORT));
-
-if(!process.env.GEMINI_KEY){
-  console.log('⚠️ ما كاينش GEMINI_KEY فـ Environment Variables');
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY || 'test');
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
 
 const client = new Client({
+  authStrategy: new LocalAuth({ dataPath: '/tmp/wabot' }),
   puppeteer: {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/render/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome'
-  },
-  authStrategy: new LocalAuth(),
-  puppeteer: { 
-    headless: true,
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--single-process'] 
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   }
 });
 
-client.on('qr', qr => {
-  lastQr = qr;
+client.on('qr', async (qr) => {
   console.log('QR جاهز!');
-  console.log(qr);
+  lastQR = await qrcode.toDataURL(qr);
 });
 
-client.on('ready', () => console.log('✅ البوت خدام!'));
-client.on('auth_failure', m => console.log('Auth fail', m));
+client.on('ready', () => {
+  console.log('✅ البوت مربوط واجد!');
+  lastQR = null;
+});
 
 client.on('message', async msg => {
   if(msg.fromMe) return;
-  if(msg.body.length < 1) return;
+  if(msg.from.includes('@g.us')) return;
+  console.log('📩 جات رسالة:', msg.body);
   try {
-    console.log('جات رسالة: '+msg.body);
-    const prompt = `جاوب بالدارجة المغربية باختصار: ${msg.body}`;
-    const result = await model.generateContent(prompt);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(msg.body);
     const reply = result.response.text();
-    await client.sendMessage(msg.from, reply);
-  } catch(e){ 
-    console.log('Error reply', e.message);
-    try{ await client.sendMessage(msg.from, 'ثانية... كانجرب نصلح'); }catch{}
+    console.log('🤖 الرد:', reply);
+    await msg.reply(reply);
+  } catch(e) {
+    console.log('❌ إيرور Gemini:', e.message);
   }
 });
 
-client.initialize().catch(e=>console.log('Init error', e));
+app.get('/', (req, res) => {
+  if(lastQR) {
+    res.send(`<html><body style="text-align:center"><h1>سكاني هاد QR دابا</h1><img src="${lastQR}" style="width:300px"/><script>setTimeout(()=>location.reload(), 15000)</script></body></html>`);
+  } else {
+    res.send('<h1>✅ البوت خدام ومربوط! صيفط ميساج للهاتف الثاني دابا</h1>');
+  }
+});
+
+app.listen(10000, () => console.log('Server on 10000'));
+client.initialize();
